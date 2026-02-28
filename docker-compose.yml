@@ -1,0 +1,82 @@
+version: "3.9"
+
+services:
+  # ── ModelToll Gateway ──────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: modeltoll:latest
+    container_name: modeltoll-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql+asyncpg://modeltoll:modeltoll@postgres:5432/modeltoll
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-change-me-admin-key}
+      - LOG_LEVEL=INFO
+      - WORKERS=2
+    volumes:
+      - ./config:/app/config:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: modeltoll-postgres
+    environment:
+      POSTGRES_USER: modeltoll
+      POSTGRES_PASSWORD: modeltoll
+      POSTGRES_DB: modeltoll
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U modeltoll"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: modeltoll-redis
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Adminer (DB UI for development) ───────────────────────────────────────
+  adminer:
+    image: adminer:latest
+    container_name: modeltoll-adminer
+    ports:
+      - "8090:8080"
+    depends_on:
+      - postgres
+    profiles:
+      - dev
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

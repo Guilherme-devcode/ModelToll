@@ -1,0 +1,65 @@
+{
+  "_comment": "Enterprise-defined regex patterns for proprietary data detection.",
+  "patterns": [
+    {
+      "name": "INTERNAL_PROJECT_CODE",
+      "regex": "\\bPROJ-[A-Z]{2,6}-\\d{4,8}\\b",
+      "score": 0.85,
+      "replacement": "[INTERNAL_PROJECT_CODE]"
+    },
+    {
+      "name": "AWS_ACCESS_KEY",
+      "regex": "\\bAKIA[0-9A-Z]{16}\\b",
+      "score": 0.99,
+      "replacement": "[AWS_ACCESS_KEY]"
+    },
+    {
+      "name": "AWS_SECRET_KEY",
+      "regex": "(?i)aws.{0,20}secret.{0,20}['\"][0-9a-zA-Z/+]{40}['\"]",
+      "score": 0.99,
+      "replacement": "[AWS_SECRET_KEY]"
+    },
+    {
+      "name": "PRIVATE_KEY_BLOCK",
+      "regex": "-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----[\\s\\S]+?-----END (RSA |EC |OPENSSH )?PRIVATE KEY-----",
+      "score": 0.99,
+      "replacement": "[PRIVATE_KEY_REDACTED]"
+    },
+    {
+      "name": "BEARER_TOKEN",
+      "regex": "(?i)bearer\\s+[a-zA-Z0-9\\-._~+/]+=*",
+      "score": 0.95,
+      "replacement": "[BEARER_TOKEN]"
+    },
+    {
+      "name": "DATABASE_CONNECTION_STRING",
+      "regex": "(?i)(postgres|mysql|mongodb|redis|mssql)://[^\\s\"']+",
+      "score": 0.95,
+      "replacement": "[DB_CONNECTION_STRING]"
+    },
+    {
+      "name": "GITHUB_TOKEN",
+      "regex": "\\bghp_[a-zA-Z0-9]{36}\\b|\\bgho_[a-zA-Z0-9]{36}\\b",
+      "score": 0.99,
+      "replacement": "[GITHUB_TOKEN]"
+    },
+    {
+      "name": "SLACK_TOKEN",
+      "regex": "\\bxox[baprs]-[0-9a-zA-Z\\-]+",
+      "score": 0.99,
+      "replacement": "[SLACK_TOKEN]"
+    },
+    {
+      "name": "CNPJ_BR",
+      "regex": "\\b\\d{2}\\.\\d{3}\\.\\d{3}/\\d{4}-\\d{2}\\b",
+      "score": 0.90,
+      "replacement": "[CNPJ_REDACTED]"
+    },
+    {
+      "name": "CPF_BR",
+      "regex": "\\b\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}\\b",
+      "score": 0.90,
+      "replacement": "[CPF_REDACTED]"
+    }
+  ]
+}

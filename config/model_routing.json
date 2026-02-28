@@ -1,0 +1,67 @@
+{
+  "_comment": "Maps intercepted upstream model → approved cheaper target model with cost data (USD per 1M tokens).",
+  "routes": [
+    {
+      "source_pattern": "gpt-4o",
+      "target_model": "gpt-4o-mini",
+      "target_provider": "openai",
+      "target_endpoint": "https://api.openai.com/v1/chat/completions",
+      "cost_input_per_1m_source": 5.00,
+      "cost_input_per_1m_target": 0.15,
+      "cost_output_per_1m_source": 15.00,
+      "cost_output_per_1m_target": 0.60,
+      "reason": "gpt-4o → gpt-4o-mini: 97% cheaper for most enterprise tasks"
+    },
+    {
+      "source_pattern": "gpt-4-turbo",
+      "target_model": "gpt-4o-mini",
+      "target_provider": "openai",
+      "target_endpoint": "https://api.openai.com/v1/chat/completions",
+      "cost_input_per_1m_source": 10.00,
+      "cost_input_per_1m_target": 0.15,
+      "cost_output_per_1m_source": 30.00,
+      "cost_output_per_1m_target": 0.60,
+      "reason": "gpt-4-turbo → gpt-4o-mini: 98% cheaper"
+    },
+    {
+      "source_pattern": "claude-opus",
+      "target_model": "claude-haiku-4-5-20251001",
+      "target_provider": "anthropic",
+      "target_endpoint": "https://api.anthropic.com/v1/messages",
+      "cost_input_per_1m_source": 15.00,
+      "cost_input_per_1m_target": 0.80,
+      "cost_output_per_1m_source": 75.00,
+      "cost_output_per_1m_target": 4.00,
+      "reason": "claude-opus → claude-haiku: 95% cheaper"
+    },
+    {
+      "source_pattern": "claude-sonnet",
+      "target_model": "claude-haiku-4-5-20251001",
+      "target_provider": "anthropic",
+      "target_endpoint": "https://api.anthropic.com/v1/messages",
+      "cost_input_per_1m_source": 3.00,
+      "cost_input_per_1m_target": 0.80,
+      "cost_output_per_1m_source": 15.00,
+      "cost_output_per_1m_target": 4.00,
+      "reason": "claude-sonnet → claude-haiku: 73% cheaper"
+    },
+    {
+      "source_pattern": "gemini-1.5-pro",
+      "target_model": "gemini-1.5-flash",
+      "target_provider": "google",
+      "target_endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+      "cost_input_per_1m_source": 3.50,
+      "cost_input_per_1m_target": 0.075,
+      "cost_output_per_1m_source": 10.50,
+      "cost_output_per_1m_target": 0.30,
+      "reason": "gemini-1.5-pro → gemini-1.5-flash: 98% cheaper"
+    }
+  ],
+  "default_route": {
+    "target_model": "gpt-4o-mini",
+    "target_provider": "openai",
+    "target_endpoint": "https://api.openai.com/v1/chat/completions",
+    "cost_input_per_1m_target": 0.15,
+    "cost_output_per_1m_target": 0.60
+  }
+}
