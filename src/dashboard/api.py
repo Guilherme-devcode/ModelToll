@@ -1,25 +1,28 @@
 """
 ModelToll Admin Dashboard API
-──────────────────────────────
+------------------------------
 REST endpoints consumed by the enterprise admin dashboard.
 
-Sections:
-  • /dashboard/summary     — overall KPIs (cost, savings, requests)
-  • /dashboard/logs        — paginated audit log with filters
-  • /dashboard/top-models  — which models are being requested/routed
-  • /dashboard/savings     — time-series cost arbitrage data
-  • /dashboard/tenants     — multi-tenant summary (for MSPs)
-  • /health                — liveness / readiness probe
+  GET  /health                    -- liveness / readiness probe
+  GET  /dashboard/summary         -- overall KPIs (cost, savings, requests)
+  GET  /dashboard/logs            -- paginated audit log with filters + search
+  GET  /dashboard/top-models      -- which models are being requested / routed
+  GET  /dashboard/savings         -- time-series cost arbitrage data
+  GET  /dashboard/routing-rules   -- active routing rules from config file
+  GET  /dashboard/config          -- current gateway configuration
+  PATCH /dashboard/config         -- update gateway configuration at runtime
 """
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Security
 from fastapi.security.api_key import APIKeyHeader
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -32,7 +35,7 @@ health_router = APIRouter(tags=["health"])
 _api_key_header = APIKeyHeader(name="X-Admin-Api-Key", auto_error=True)
 
 
-# ── Auth ────────────────────────────────────────────────────────────────────────
+# ── Auth ─────────────────────────────────────────────────────────────────────────
 
 def _verify_api_key(api_key: str = Security(_api_key_header)) -> str:
     if api_key != settings.admin_api_key:
@@ -44,7 +47,7 @@ def _get_session_factory(request: Request) -> async_sessionmaker[AsyncSession]:
     return request.app.state.session_factory
 
 
-# ── Response schemas ────────────────────────────────────────────────────────────
+# ── Response schemas ──────────────────────────────────────────────────────────────
 
 class SummaryResponse(BaseModel):
     period_days: int
@@ -106,7 +109,41 @@ class DailySavingsItem(BaseModel):
     target_cost_usd: float
 
 
-# ── Endpoints ──────────────────────────────────────────────────────────────────
+class RoutingRule(BaseModel):
+    source_pattern: str
+    target_model: str
+    target_provider: str
+    target_endpoint: str
+    cost_input_per_1m_source: float = 0.0
+    cost_input_per_1m_target: float = 0.0
+    cost_output_per_1m_source: float = 0.0
+    cost_output_per_1m_target: float = 0.0
+    reason: str = ""
+
+
+class RoutingRulesResponse(BaseModel):
+    routes: list[RoutingRule]
+    default_model: str
+
+
+class GatewayConfig(BaseModel):
+    scrubber_enabled: bool
+    savings_share_percent: float
+    default_approved_model: str
+    monitored_ai_hosts: list[str]
+    hard_blocked_hosts: list[str]
+    pii_entities: list[str]
+
+
+class GatewayConfigPatch(BaseModel):
+    scrubber_enabled: bool | None = Field(default=None)
+    savings_share_percent: float | None = Field(default=None, ge=0, le=100)
+    default_approved_model: str | None = Field(default=None)
+    monitored_ai_hosts: list[str] | None = Field(default=None)
+    hard_blocked_hosts: list[str] | None = Field(default=None)
+
+
+# ── Endpoints ────────────────────────────────────────────────────────────────────
 
 @health_router.get("/health")
 async def health() -> dict[str, str]:
@@ -141,6 +178,29 @@ async def get_summary(
         )
         row = result.one()
 
+        # Aggregate top entity types via unnest
+        top_entity_types: list[str] = []
+        try:
+            entity_result = await session.execute(
+                text(
+                    """
+                    SELECT entity, count(*) AS cnt
+                    FROM audit_logs,
+                         unnest(scrubber_entity_types) AS entity
+                    WHERE tenant_id = :tenant
+                      AND created_at >= :since
+                      AND scrubber_entity_types IS NOT NULL
+                    GROUP BY entity
+                    ORDER BY cnt DESC
+                    LIMIT 10
+                    """
+                ),
+                {"tenant": tenant_id, "since": since},
+            )
+            top_entity_types = [r.entity for r in entity_result.all()]
+        except Exception:
+            pass  # Gracefully skip if DB doesn't support unnest yet
+
     total = row.total or 0
     source_cost = float(row.source_cost or 0)
     savings = float(row.savings or 0)
@@ -160,7 +220,7 @@ async def get_summary(
         total_savings_usd=savings,
         modeltoll_fee_usd=round(fee, 4),
         savings_percent=round(savings_pct, 2),
-        top_entity_types=[],
+        top_entity_types=top_entity_types,
     )
 
 
@@ -171,6 +231,7 @@ async def get_audit_logs(
     page_size: int = Query(default=50, ge=1, le=200),
     action: str | None = Query(default=None),
     scrubbed_only: bool = Query(default=False),
+    search: str | None = Query(default=None, max_length=200),
     _: str = Depends(_verify_api_key),
     session_factory: async_sessionmaker[AsyncSession] = Depends(_get_session_factory),
 ) -> AuditLogPage:
@@ -190,6 +251,18 @@ async def get_audit_logs(
     if scrubbed_only:
         base_query = base_query.where(AuditLog.scrubber_triggered.is_(True))
         count_query = count_query.where(AuditLog.scrubber_triggered.is_(True))
+
+    if search:
+        pattern = f"%{search}%"
+        from sqlalchemy import or_
+        search_filter = or_(
+            AuditLog.user_id.ilike(pattern),
+            AuditLog.original_model.ilike(pattern),
+            AuditLog.original_host.ilike(pattern),
+            AuditLog.routed_model.ilike(pattern),
+        )
+        base_query = base_query.where(search_filter)
+        count_query = count_query.where(search_filter)
 
     base_query = base_query.order_by(desc(AuditLog.created_at)).offset(offset).limit(page_size)
 
@@ -301,3 +374,72 @@ async def get_savings_timeseries(
         )
         for r in rows
     ]
+
+
+@router.get("/routing-rules", response_model=RoutingRulesResponse)
+async def get_routing_rules(
+    _: str = Depends(_verify_api_key),
+) -> RoutingRulesResponse:
+    """Return active routing rules from the model_routing.json config file."""
+    config_path = Path(settings.model_routing_config_path)
+    if not config_path.exists():
+        return RoutingRulesResponse(routes=[], default_model=settings.default_approved_model)
+    with config_path.open() as f:
+        data: dict[str, Any] = json.load(f)
+    routes = [
+        RoutingRule(
+            source_pattern=r.get("source_pattern", ""),
+            target_model=r.get("target_model", ""),
+            target_provider=r.get("target_provider", ""),
+            target_endpoint=r.get("target_endpoint", ""),
+            cost_input_per_1m_source=r.get("cost_input_per_1m_source", 0.0),
+            cost_input_per_1m_target=r.get("cost_input_per_1m_target", 0.0),
+            cost_output_per_1m_source=r.get("cost_output_per_1m_source", 0.0),
+            cost_output_per_1m_target=r.get("cost_output_per_1m_target", 0.0),
+            reason=r.get("reason", ""),
+        )
+        for r in data.get("routes", [])
+    ]
+    default_model = data.get("default_route", {}).get("target_model", settings.default_approved_model)
+    return RoutingRulesResponse(routes=routes, default_model=default_model)
+
+
+@router.get("/config", response_model=GatewayConfig)
+async def get_config(
+    _: str = Depends(_verify_api_key),
+) -> GatewayConfig:
+    """Return current gateway configuration."""
+    return GatewayConfig(
+        scrubber_enabled=settings.scrubber_enabled,
+        savings_share_percent=settings.savings_share_percent,
+        default_approved_model=settings.default_approved_model,
+        monitored_ai_hosts=list(settings.monitored_hosts_set),
+        hard_blocked_hosts=list(settings.hard_blocked_hosts_set),
+        pii_entities=settings.pii_entity_list,
+    )
+
+
+@router.patch("/config", response_model=GatewayConfig)
+async def patch_config(
+    patch: GatewayConfigPatch,
+    _: str = Depends(_verify_api_key),
+) -> GatewayConfig:
+    """Update gateway configuration at runtime (non-persistent — restart resets to env)."""
+    if patch.scrubber_enabled is not None:
+        settings.scrubber_enabled = patch.scrubber_enabled
+    if patch.savings_share_percent is not None:
+        settings.savings_share_percent = patch.savings_share_percent
+    if patch.default_approved_model is not None:
+        settings.default_approved_model = patch.default_approved_model
+    if patch.monitored_ai_hosts is not None:
+        settings.monitored_ai_hosts = ",".join(patch.monitored_ai_hosts)
+    if patch.hard_blocked_hosts is not None:
+        settings.hard_blocked_hosts = ",".join(patch.hard_blocked_hosts)
+    return GatewayConfig(
+        scrubber_enabled=settings.scrubber_enabled,
+        savings_share_percent=settings.savings_share_percent,
+        default_approved_model=settings.default_approved_model,
+        monitored_ai_hosts=list(settings.monitored_hosts_set),
+        hard_blocked_hosts=list(settings.hard_blocked_hosts_set),
+        pii_entities=settings.pii_entity_list,
+    )
