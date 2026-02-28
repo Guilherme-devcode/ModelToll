@@ -100,9 +100,16 @@ class PresidioScrubber:
             return
         try:
             from presidio_analyzer import AnalyzerEngine  # type: ignore[import]
+            from presidio_analyzer.nlp_engine import NlpEngineProvider  # type: ignore[import]
             from presidio_anonymizer import AnonymizerEngine  # type: ignore[import]
 
-            self._analyzer = AnalyzerEngine()
+            configuration = {
+                "nlp_engine_name": "spacy",
+                "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
+            }
+            provider = NlpEngineProvider(nlp_configuration=configuration)
+            nlp_engine = provider.create_engine()
+            self._analyzer = AnalyzerEngine(nlp_engine=nlp_engine)
             self._anonymizer = AnonymizerEngine()
             log.info("presidio_loaded")
         except ImportError:

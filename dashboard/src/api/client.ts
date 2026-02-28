@@ -3,7 +3,10 @@ import type { AuditLogPage, DailySavingsItem, ModelUsageItem, Summary } from '..
 const BASE = ''  // proxied via Vite dev server → http://localhost:8080
 
 function apiKey(): string {
-  return localStorage.getItem('mt_admin_key') ?? ''
+  const stored = localStorage.getItem('mt_admin_key')
+  if (stored) return stored
+  const fallback = import.meta.env.VITE_DEFAULT_API_KEY
+  return typeof fallback === 'string' ? fallback : ''
 }
 
 async function get<T>(path: string, params?: Record<string, string | number | boolean>): Promise<T> {
@@ -11,9 +14,19 @@ async function get<T>(path: string, params?: Record<string, string | number | bo
   if (params) {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)))
   }
-  const res = await fetch(url.toString(), {
-    headers: { 'X-Admin-Api-Key': apiKey() },
+  const key = apiKey()
+  let res = await fetch(url.toString(), {
+    headers: { 'X-Admin-Api-Key': key },
   })
+  if (res.status === 403) {
+    const text = await res.text().catch(() => res.statusText)
+    if (text.includes('Invalid admin API key') && localStorage.getItem('mt_admin_key')) {
+      localStorage.removeItem('mt_admin_key')
+      res = await fetch(url.toString(), {
+        headers: { 'X-Admin-Api-Key': apiKey() },
+      })
+    }
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
     throw new Error(`${res.status}: ${text}`)

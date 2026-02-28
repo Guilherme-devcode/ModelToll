@@ -4,8 +4,10 @@ import { Header } from '../components/layout/Header'
 import { Card, CardHeader, CardTitle } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
 
+const DEFAULT_KEY = import.meta.env.VITE_DEFAULT_API_KEY ?? 'change-me-admin-key'
+
 export function Settings() {
-  const [apiKey, setApiKey] = useState(localStorage.getItem('mt_admin_key') ?? '')
+  const [apiKey, setApiKey] = useState(localStorage.getItem('mt_admin_key') ?? DEFAULT_KEY)
   const [showKey, setShowKey] = useState(false)
   const [saved, setSaved] = useState(false)
   const [savingsPct, setSavingsPct] = useState('20')
@@ -51,8 +53,15 @@ export function Settings() {
               <Save size={14} />
               {saved ? 'Saved!' : 'Save'}
             </button>
+            <button
+              type="button"
+              onClick={() => { setApiKey(DEFAULT_KEY); localStorage.setItem('mt_admin_key', DEFAULT_KEY); setSaved(true); setTimeout(() => setSaved(false), 2000) }}
+              className="rounded-lg border border-gray-600 px-3 py-2 text-sm text-gray-400 hover:text-gray-200 hover:border-gray-500 transition"
+            >
+              Use default
+            </button>
           </div>
-          <p className="mt-2 text-xs text-gray-600">Stored in localStorage. Sent as <code className="text-gray-400">X-Admin-Api-Key</code> header.</p>
+          <p className="mt-2 text-xs text-gray-600">Stored in localStorage. Must match <code className="text-gray-400">ADMIN_API_KEY</code> in backend .env</p>
         </Card>
 
         {/* General settings */}
