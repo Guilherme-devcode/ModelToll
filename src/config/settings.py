@@ -24,29 +24,29 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # ── Application ──────────────────────────────────────────────────────────
+    # Application
     app_name: str = "ModelToll"
     app_version: str = "0.1.0"
     environment: str = "development"
     log_level: LogLevel = LogLevel.INFO
     secret_key: str = Field(default="change-me-in-production-32-chars-min")
 
-    # ── Server ────────────────────────────────────────────────────────────────
+    # Server
     host: str = "0.0.0.0"
     port: int = 8080
     workers: int = 1
 
-    # ── Database ──────────────────────────────────────────────────────────────
+    # Database
     database_url: str = "postgresql+asyncpg://modeltoll:modeltoll@localhost:5432/modeltoll"
 
-    # ── Redis ─────────────────────────────────────────────────────────────────
+    # Redis
     redis_url: str = "redis://localhost:6379/0"
 
-    # ── Proxy ─────────────────────────────────────────────────────────────────
+    # Proxy
     proxy_timeout_seconds: int = 120
     max_body_size_mb: int = 10
 
-    # ── Scrubber ──────────────────────────────────────────────────────────────
+    # Scrubber
     scrubber_enabled: bool = True
     # Comma-separated Presidio entity types to redact
     pii_entities: str = (
@@ -57,30 +57,36 @@ class Settings(BaseSettings):
     # Regex patterns for proprietary data (added by enterprise admins)
     custom_patterns_path: str = "config/custom_patterns.json"
 
-    # ── Model Router ──────────────────────────────────────────────────────────
-    # JSON mapping of source model → approved cheaper target model + cost info
+    # Model Router
+    # JSON mapping of source model -> approved cheaper target model + cost info
     model_routing_config_path: str = "config/model_routing.json"
     default_approved_model: str = "gpt-4o-mini"
 
-    # ── Cost Arbitrage ────────────────────────────────────────────────────────
+    # Cost Arbitrage
     savings_share_percent: float = 20.0  # ModelToll keeps 20% of savings
 
-    # ── Blocked destinations ──────────────────────────────────────────────────
-    # Comma-separated hostnames that are always blocked
-    blocked_ai_hosts: str = (
+    # Monitored AI hosts
+    # Comma-separated hostnames to INTERCEPT and route through ModelToll.
+    # Requests to these hosts are scrubbed -> rerouted to the approved model.
+    monitored_ai_hosts: str = (
         "api.openai.com,api.anthropic.com,generativelanguage.googleapis.com,"
         "api.cohere.ai,api.mistral.ai,api.together.xyz,api.groq.com,"
         "api.perplexity.ai,api-inference.huggingface.co"
     )
 
-    # ── Admin API ─────────────────────────────────────────────────────────────
+    # Hard-blocked hosts
+    # Comma-separated hostnames that are ALWAYS blocked (policy violation, 403).
+    # Empty by default — configure per enterprise policy.
+    hard_blocked_hosts: str = ""
+
+    # Admin API
     admin_api_key: str = "change-me-admin-key"
     dashboard_allowed_origins: str = "http://localhost:3000,http://localhost:5173"
 
-    # ── Metrics ───────────────────────────────────────────────────────────────
+    # Metrics
     metrics_enabled: bool = True
 
-    @field_validator("pii_entities", "blocked_ai_hosts", "dashboard_allowed_origins")
+    @field_validator("pii_entities", "monitored_ai_hosts", "hard_blocked_hosts", "dashboard_allowed_origins")
     @classmethod
     def split_csv(cls, v: str) -> Any:  # kept as str at runtime; helpers parse it
         return v
@@ -90,8 +96,12 @@ class Settings(BaseSettings):
         return [e.strip() for e in self.pii_entities.split(",") if e.strip()]
 
     @property
-    def blocked_hosts_set(self) -> set[str]:
-        return {h.strip() for h in self.blocked_ai_hosts.split(",") if h.strip()}
+    def monitored_hosts_set(self) -> set[str]:
+        return {h.strip() for h in self.monitored_ai_hosts.split(",") if h.strip()}
+
+    @property
+    def hard_blocked_hosts_set(self) -> set[str]:
+        return {h.strip() for h in self.hard_blocked_hosts.split(",") if h.strip()}
 
     @property
     def allowed_origins_list(self) -> list[str]:
